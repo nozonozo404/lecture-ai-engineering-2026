@@ -4,10 +4,8 @@
     uv run python -m app.ask "LoRAとは何ですか？"
     uv run python -m app.ask            # 質問を省略すると、講座に固有の質問をする
 
-ツールも会話履歴も持たない「素の」呼び出し。
-講座に固有のことを聞くと、「分からない」と答えるか、一般論でもっともらしく答える
-（講座の実際とは違う）ことを確かめよう。
-（第3回で、用語集を検索できるエージェントにして改善する）
+会話履歴は持たない単発の呼び出し。
+質問が用語集に載っている場合は、その定義を根拠としてモデルに渡す。
 """
 
 import argparse
@@ -16,6 +14,7 @@ from google import genai
 from google.genai import errors
 
 from app.config import MODEL, api_error_message, get_api_key
+from app.tools import search_glossary
 
 # 講座に固有の質問。正しい答えは data/glossary.json の homework-levels にある
 DEFAULT_QUESTION = "AIE2026の講座の宿題にある「3レベル」とは何ですか？"
@@ -23,10 +22,22 @@ DEFAULT_QUESTION = "AIE2026の講座の宿題にある「3レベル」とは何�
 
 def ask(question: str) -> str:
     client = genai.Client(api_key=get_api_key())
-    response = client.models.generate_content(model=MODEL, contents=question)
+    glossary_context = search_glossary(question)
+    if glossary_context.startswith("用語集に「"):
+        contents = question
+    else:
+        contents = (
+            "以下はAIE2026用語集の該当情報です。この定義に基づいて質問に答えてください。\n"
+            f"{glossary_context}\n\n質問: {question}"
+        )
+    response = client.models.generate_content(model=MODEL, contents=contents)
 
-    # TODO(第1回 演習): response.usage_metadata から
-    #   入力トークン数と出力トークン数を表示してみよう（Copilotに頼んでよい）
+    usage = response.usage_metadata
+    if usage is not None:
+        print(
+            f"[トークン] 入力: {usage.prompt_token_count} / "
+            f"出力: {usage.candidates_token_count}"
+        )
 
     return response.text
 
